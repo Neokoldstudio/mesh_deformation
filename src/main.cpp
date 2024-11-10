@@ -8,16 +8,17 @@
 #include <queue>
 #include "include/viewer.h"
 
+using namespace Eigen;
+using namespace std;
+using namespace igl;
+
 int main(int argc, char *argv[])
 {
     {
-        Eigen::MatrixXd V,U;
-        Eigen::MatrixXi F;
+        MatrixXd V, U;
+        MatrixXi F;
 
-        using namespace Eigen;
-        using namespace std;
-        using namespace igl;
-        igl::read_triangle_mesh("../assets/bunny.obj", V, F);
+        read_triangle_mesh("../assets/bunny.obj", V, F);
 
         view(V, F);
     }
