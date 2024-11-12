@@ -3,6 +3,7 @@
 #include <igl/opengl/glfw/imgui/ImGuiMenu.h>
 #include <igl/opengl/glfw/imgui/ImGuiPlugin.h>
 #include <igl/opengl/glfw/imgui/ImGuiHelpers.h>
+#include <igl/opengl/glfw/imgui/ImGuizmoWidget.h>
 #include <igl/readOBJ.h>
 #include <igl/unproject_onto_mesh.h>
 #include <igl/arap.h>
@@ -18,11 +19,47 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     Eigen::MatrixXd C = Eigen::MatrixXd::Constant(F.rows(), 3, 1); // color matrix initialized to white
     igl::opengl::glfw::Viewer viewer;
 
-    // Attach a menu plugin
+    // Attach a guizmo plugin
     igl::opengl::glfw::imgui::ImGuiPlugin plugin;
     viewer.plugins.push_back(&plugin);
+    igl::opengl::glfw::imgui::ImGuizmoWidget guizmo;
+
+    plugin.widgets.push_back(&guizmo);
+
+    guizmo.T.block(0,3,3,1) = 0.5*(V.colwise().maxCoeff() + V.colwise().minCoeff()).transpose().cast<float>();
+  // Update can be applied relative to this remembered initial transform
+    const Eigen::Matrix4f T0 = guizmo.T;
+    // Attach callback to apply imguizmo's transform to mesh
+    guizmo.callback = [&](const Eigen::Matrix4f & T)
+    {
+        const Eigen::Matrix4d TT = (T*T0.inverse()).cast<double>().transpose();
+        viewer.data().set_vertices(
+        (V.rowwise().homogeneous()*TT).rowwise().hnormalized());
+        viewer.data().compute_normals();
+    };
+
+      // Maya-style keyboard shortcuts for operation
+    viewer.callback_key_pressed = [&](decltype(viewer) &,unsigned int key, int mod)
+    {
+        switch(key)
+        {
+        case ' ': guizmo.visible = !guizmo.visible; return true;
+        case 'W': case 'w': guizmo.operation = ImGuizmo::TRANSLATE; return true;
+        case 'E': case 'e': guizmo.operation = ImGuizmo::ROTATE;    return true;
+        case 'R': case 'r': guizmo.operation = ImGuizmo::SCALE;     return true;
+        }
+        return false;
+    };
+
     igl::opengl::glfw::imgui::ImGuiMenu menu;
     plugin.widgets.push_back(&menu);
+
+    std::cout<<R"(
+    W,w  Switch to translate operation
+    E,e  Switch to rotate operation
+    R,r  Switch to scale operation
+    )";
+
 
     static char filePath[128] = ""; // Buffer for file path input
 
@@ -42,13 +79,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     arap_data.with_dynamics = true;
 
     bool arap_initialized = false;
-
-    // Add content to the default menu window
-    menu.callback_draw_viewer_menu = [&]()
-    {
-        // Draw parent menu content
-        menu.draw_viewer_menu();
-    };
 
     bool is_dragging = false;
 
