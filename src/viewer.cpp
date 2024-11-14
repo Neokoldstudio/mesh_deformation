@@ -30,11 +30,21 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
   // Update can be applied relative to this remembered initial transform
     const Eigen::Matrix4f T0 = guizmo.T;
     // Attach callback to apply imguizmo's transform to mesh
+
+    std::vector<int> handle_indices;
+    int anchor_index = 0;
+    Eigen::MatrixXd V_orig = V;
+    Eigen::MatrixXd V_handle = V;
+    Eigen::VectorXi b;  // Handle vertices
+    Eigen::VectorXi a;  // Anchor vertices
+    Eigen::MatrixXd bc; // Handle target positions
+    Eigen::MatrixXd ac; // Anchor positions
+
     guizmo.callback = [&](const Eigen::Matrix4f & T)
     {
         const Eigen::Matrix4d TT = (T*T0.inverse()).cast<double>().transpose();
-        viewer.data().set_vertices(
-        (V.rowwise().homogeneous()*TT).rowwise().hnormalized());
+        V_handle = (V_orig.rowwise().homogeneous() * TT).rowwise().hnormalized();
+        viewer.data().set_vertices(V_handle);
         viewer.data().compute_normals();
     };
 
@@ -64,135 +74,71 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     static char filePath[128] = ""; // Buffer for file path input
 
     // Handle matrix to store selected vertex indices
-    std::vector<int> handle_indices;
-    std::vector<int> anchor_indices;
-    Eigen::MatrixXd V_orig = V;
-    Eigen::MatrixXd V_handle = V;
-    Eigen::VectorXi b;  // Handle vertices
-    Eigen::VectorXi a;  // Anchor vertices
-    Eigen::MatrixXd bc; // Handle target positions
-    Eigen::MatrixXd ac; // Anchor positions
 
-    // ARAP data
-    igl::ARAPData arap_data;
-    arap_data.energy = igl::ARAP_ENERGY_TYPE_SPOKES_AND_RIMS;
-    arap_data.with_dynamics = true;
 
-    bool arap_initialized = false;
+    Eigen::Vector2f down_mouse_pos, up_mouse_pos;
+    bool shift_pressed = false;
 
-    bool is_dragging = false;
-
-    viewer.callback_mouse_down =
-        [&V, &F, &C, &handle_indices, &anchor_indices, &V_handle, &V_orig, &b, &a, &bc, &ac, &arap_data, &is_dragging, &arap_initialized](igl::opengl::glfw::Viewer &viewer, int button, int modifier) -> bool
+    viewer.callback_key_down = [&](decltype(viewer) &, unsigned int key, int mod)->bool
     {
-        int fid;
-        Eigen::Vector3f bc_f;
-        // Cast a ray in the view direction starting from the mouse position
-        double x = viewer.current_mouse_x;
-        double y = viewer.core().viewport(3) - viewer.current_mouse_y;
-        if (igl::unproject_onto_mesh(Eigen::Vector2f(x, y), viewer.core().view,
-                                     viewer.core().proj, viewer.core().viewport, V, F, fid, bc_f))
+        if (key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT)
         {
-            // Get the vertex index from the barycentric coordinates
-            Eigen::VectorXi vertices = F.row(fid);
-            int selected_vertex;
-            bc_f.maxCoeff(&selected_vertex);
-            int vertex_index = vertices[selected_vertex];
-
-            if (modifier == GLFW_MOD_SHIFT) // Check if Shift key is pressed for handles
-            {
-                // Add the selected vertex index to the handle matrix if not already present
-                if (std::find(handle_indices.begin(), handle_indices.end(), vertex_index) == handle_indices.end())
-                {
-                    handle_indices.push_back(vertex_index);
-                }
-
-                // Update the list of handle vertices and their target positions
-                b = Eigen::Map<const Eigen::VectorXi>(handle_indices.data(), handle_indices.size());
-                bc.resize(handle_indices.size(), 3);
-                for (int i = 0; i < handle_indices.size(); ++i)
-                {
-                    bc.row(i) = V_handle.row(handle_indices[i]);
-                }
-
-                // Reinitialize ARAP precomputation with updated handles and anchors
-                Eigen::VectorXi combined_indices(b.size() + a.size());
-                combined_indices << b, a;
-                igl::arap_precomputation(V, F, 3, combined_indices, arap_data);
-                arap_initialized = true;
-
-                // Paint the selected face blue
-                C.row(fid) << 0, 0, 1;
-                viewer.data().set_colors(C);
-                return true;
-            }
-            else if (modifier == GLFW_MOD_ALT) // Check if Alt key is pressed for anchors
-            {
-                // Add the selected vertex index to the anchor matrix if not already present
-                if (std::find(anchor_indices.begin(), anchor_indices.end(), vertex_index) == anchor_indices.end())
-                {
-                    anchor_indices.push_back(vertex_index);
-                }
-
-                // Update the list of anchor vertices and their positions
-                a = Eigen::Map<const Eigen::VectorXi>(anchor_indices.data(), anchor_indices.size());
-                ac.resize(anchor_indices.size(), 3);
-                for (int i = 0; i < anchor_indices.size(); ++i)
-                {
-                    ac.row(i) = V.row(anchor_indices[i]);
-                }
-
-                // Paint the selected face red
-                C.row(fid) << 1, 0, 0;
-                viewer.data().set_colors(C);
-                return true;
-            }
-        }
-        else if (modifier == GLFW_MOD_CONTROL) // Check if Control key is pressed for dragging
-        {
-            is_dragging = true; // Start dragging
-            printf("dragging\n");
+            shift_pressed = true;
+            double x, y;
+            glfwGetCursorPos(viewer.window, &x, &y);
+            down_mouse_pos = Eigen::Vector2f(x, y);
+            printf("%f %f\n", down_mouse_pos(0), down_mouse_pos(1));
+            return true;
         }
         return false;
     };
 
-    viewer.callback_mouse_up =
-        [&is_dragging](igl::opengl::glfw::Viewer &, int, int) -> bool
+    viewer.callback_key_up = [&](decltype(viewer) &, unsigned int key, int mod)->bool
     {
-        is_dragging = false; // Stop dragging
+        if (key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT)
+        {
+            shift_pressed = false;
+            double x, y;
+            glfwGetCursorPos(viewer.window, &x, &y);
+            up_mouse_pos = Eigen::Vector2f(x, y);
+            printf("%f %f\n", up_mouse_pos(0), up_mouse_pos(1));
+            // Define the rectangle
+            Eigen::Vector2f min_pos = down_mouse_pos.cwiseMin(up_mouse_pos);
+            Eigen::Vector2f max_pos = down_mouse_pos.cwiseMax(up_mouse_pos);
+
+            // Project 3D points to screen space and check if they are inside the rectangle
+            handle_indices.clear();
+            for (int i = 0; i < V.rows(); ++i)
+            {
+                Eigen::Vector3f proj;
+                igl::project(V.row(i).cast<float>(), viewer.core().view, viewer.core().proj, viewer.core().viewport, proj);
+                if ((proj.head<2>().array() >= min_pos.array()).all() && (proj.head<2>().array() <= max_pos.array()).all())
+                {
+                    handle_indices.push_back(i);
+                }
+            }
+
+            // Update anchor vertices
+            a.resize(handle_indices.size());
+            for (int i = 0; i < handle_indices.size(); ++i)
+            {
+                a(i) = handle_indices[i];
+            }
+            ac = V_orig(a, Eigen::all);
+
+            return true;
+        }
         return false;
     };
-
-    viewer.callback_mouse_move =
-        [&V_handle, &b, &bc, &arap_data, &viewer, &is_dragging, &arap_initialized](igl::opengl::glfw::Viewer &, int mouse_x, int mouse_y) -> bool
+    viewer.callback_pre_draw = [&](decltype(viewer) &)->bool
     {
-        if (!is_dragging || !arap_initialized || b.size() == 0)
-            return false;
-
-        // Update the position of all handle vertices based on mouse movement
-        Eigen::Vector3f win(mouse_x, viewer.core().viewport(3) - mouse_y, 0.5);
-        Eigen::Vector3f obj = igl::unproject(win, viewer.core().view, viewer.core().proj, viewer.core().viewport);
-
-        // Calculate the translation vector
-        Eigen::Vector3f lastVertexPosition = V_handle.row(b[0]).cast<float>();
-
-        Eigen::Vector3f translation = obj - lastVertexPosition;
-
-        // Apply the translation to all handle vertices
-        for (int i = 0; i < b.size(); ++i)
+        viewer.data().clear_points();
+        for (const auto &idx : handle_indices)
         {
-            bc.row(i) += translation.cast<double>();
+            viewer.data().add_points(V.row(idx), Eigen::RowVector3d(1, 0, 0));
         }
-
-        // Solve ARAP with the updated handle positions
-        igl::arap_solve(bc, arap_data, V_handle);
-
-        // Update the mesh with the deformed vertices
-        viewer.data().set_vertices(V_handle);
-        viewer.data().compute_normals();
-        return true;
+        return false;
     };
-
     viewer.data().set_mesh(V, F);
     viewer.data().set_colors(C);
     viewer.data().show_lines = false;
