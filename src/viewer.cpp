@@ -31,7 +31,8 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     const Eigen::Matrix4f T0 = guizmo.T;
     // Attach callback to apply imguizmo's transform to mesh
 
-    std::vector<int> handle_indices;
+    std::vector<int> anchors_indices;
+    std::vector<int> handles_indices;
     int anchor_index = 0;
     Eigen::MatrixXd V_orig = V;
     Eigen::MatrixXd V_handle = V;
@@ -39,14 +40,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     Eigen::VectorXi a;  // Anchor vertices
     Eigen::MatrixXd bc; // Handle target positions
     Eigen::MatrixXd ac; // Anchor positions
-
-    guizmo.callback = [&](const Eigen::Matrix4f &T)
-    {
-        const Eigen::Matrix4d TT = (T * T0.inverse()).cast<double>().transpose();
-        V_handle = (V_orig.rowwise().homogeneous() * TT).rowwise().hnormalized();
-        viewer.data().set_vertices(V_handle);
-        viewer.data().compute_normals();
-    };
 
     // Maya-style keyboard shortcuts for operation
     viewer.callback_key_pressed = [&](decltype(viewer) &, unsigned int key, int mod)
@@ -79,6 +72,7 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     W,w  Switch to translate operation
     E,e  Switch to rotate operation
     R,r  Switch to scale operation
+    SHIFT DOWN -> SHIFT UP Select anchored vertices by dragging a rectangle
     )";
 
     static char filePath[128] = ""; // Buffer for file path input
@@ -131,22 +125,22 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
             Eigen::Vector2f max_pos = down_mouse_pos.cwiseMax(up_mouse_pos);
 
             // Project 3D points to screen space and check if they are inside the rectangle
-            handle_indices.clear();
-            for (int i = 0; i < V.rows(); ++i)
+            anchors_indices.clear();
+            for (int i = 0; i < V_handle.rows(); ++i)
             {
                 Eigen::Vector3f proj;
-                igl::project(V.row(i).cast<float>(), viewer.core().view, viewer.core().proj, viewer.core().viewport, proj);
+                igl::project(V_handle.row(i).cast<float>(), viewer.core().view, viewer.core().proj, viewer.core().viewport, proj);
                 if ((proj.head<2>().array() >= min_pos.array()).all() && (proj.head<2>().array() <= max_pos.array()).all())
                 {
-                    handle_indices.push_back(i);
+                    anchors_indices.push_back(i);
                 }
             }
 
             // Update anchor vertices
-            a.resize(handle_indices.size());
-            for (int i = 0; i < handle_indices.size(); ++i)
+            a.resize(anchors_indices.size());
+            for (int i = 0; i < anchors_indices.size(); ++i)
             {
-                a(i) = handle_indices[i];
+                a(i) = anchors_indices[i];
             }
             ac = V_orig(a, Eigen::all);
 
@@ -154,12 +148,49 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
         }
         return false;
     };
+
+    viewer.callback_mouse_down = [&](decltype(viewer) &, int button, int modifier) -> bool
+    {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && (modifier & GLFW_MOD_ALT))
+        {
+            int fid;
+            Eigen::Vector3f bc;
+            double x = viewer.current_mouse_x;
+            double y = viewer.core().viewport(3) - viewer.current_mouse_y;
+            if (igl::unproject_onto_mesh(Eigen::Vector2f(x, y), viewer.core().view,
+                                         viewer.core().proj, viewer.core().viewport,
+                                         viewer.data().V, viewer.data().F, fid, bc))
+            {
+                // Find the closest vertex
+                Eigen::MatrixXd::Index maxIndex;
+                bc.maxCoeff(&maxIndex);
+                int closest_vertex = viewer.data().F(fid, maxIndex);
+                handles_indices.push_back(closest_vertex);
+            }
+            return true;
+        }
+        return false;
+    };
+
+    guizmo.callback = [&](const Eigen::Matrix4f &T)
+    {
+        const Eigen::Matrix4d TT = (T * T0.inverse()).cast<double>().transpose();
+        V_handle = (V_orig.rowwise().homogeneous() * TT).rowwise().hnormalized();
+        viewer.data().set_vertices(V_handle);
+        viewer.data().compute_normals();
+    };
+
     viewer.callback_pre_draw = [&](decltype(viewer) &) -> bool
     {
         viewer.data().clear_points();
-        for (const auto &idx : handle_indices)
+        for (const auto &idx : anchors_indices)
         {
-            viewer.data().add_points(V.row(idx), Eigen::RowVector3d(1, 0, 0));
+            viewer.data().add_points(V_handle.row(idx), Eigen::RowVector3d(1, 0, 0));
+        }
+
+        for (const auto &idx : handles_indices)
+        {
+            viewer.data().add_points(V_handle.row(idx), Eigen::RowVector3d(0, 1, 1));
         }
         return false;
     };
