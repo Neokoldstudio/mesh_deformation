@@ -2,6 +2,7 @@
 #define CONSTRAINTS_H
 
 #include <vector>
+#include <Eigen>
 
 class Constraints
 {
@@ -24,8 +25,10 @@ public:
     // Get all handle indices
     const std::vector<int> &getHandleIndices() const;
 
+    // Get anchor at index
     int getAnchorIndex(int index) const;
 
+    // Get handle at index
     int getHandleIndex(int index) const;
 
     int getAnchorSize() const;
@@ -38,6 +41,12 @@ public:
     // Clear all handle indices
     void clearHandleIndices();
 
+    // Set the transformation for all handles
+    void setHandleTransformation(const Eigen::Affine3d &transformation);
+
+    // Get the transformation for all handles
+    Eigen::Affine3d getHandleTransformation() const;
+
     void importConstraints(char *filePath);
 
     void exportConstraints(char *filePath);
@@ -45,6 +54,7 @@ public:
 private:
     std::vector<int> anchorIndices;
     std::vector<int> handleIndices;
+    Eigen::Affine3d handleTransformation;
 };
 
 #endif // CONSTRAINTS_H

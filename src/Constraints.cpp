@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <string.h>
 #include <stdlib.h>
+#include <stdexcept>
 
 void Constraints::addAnchorIndex(int index)
 {
@@ -25,12 +26,20 @@ const std::vector<int> &Constraints::getHandleIndices() const
 
 int Constraints::getAnchorIndex(int index) const
 {
-    return anchorIndices[index];
+    if (index >= 0 && index < anchorIndices.size())
+    {
+        return anchorIndices[index];
+    }
+    throw std::out_of_range("Index out of range");
 }
 
 int Constraints::getHandleIndex(int index) const
 {
-    return handleIndices[index];
+    if (index >= 0 && index < handleIndices.size())
+    {
+        return handleIndices[index];
+    }
+    throw std::out_of_range("Index out of range");
 }
 
 int Constraints::getAnchorSize() const
@@ -105,4 +114,14 @@ void Constraints::exportConstraints(char *filePath)
     }
 
     fclose(file);
+}
+
+void Constraints::setHandleTransformation(const Eigen::Affine3d &transformation)
+{
+    handleTransformation = transformation;
+}
+
+Eigen::Affine3d Constraints::getHandleTransformation() const
+{
+    return handleTransformation;
 }
