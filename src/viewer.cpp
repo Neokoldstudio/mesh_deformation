@@ -1,5 +1,6 @@
 #include <iostream>
 #include "include/viewer.h"
+#include "include/Constraints.h"
 #include <igl/opengl/glfw/imgui/ImGuiMenu.h>
 #include <igl/opengl/glfw/imgui/ImGuiPlugin.h>
 #include <igl/opengl/glfw/imgui/ImGuiHelpers.h>
@@ -31,9 +32,7 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     const Eigen::Matrix4f T0 = guizmo.T;
     // Attach callback to apply imguizmo's transform to mesh
 
-    std::vector<int> anchors_indices;
-    std::vector<int> handles_indices;
-    int anchor_index = 0;
+    Constraints constraints;
     Eigen::MatrixXd V_orig = V;
     Eigen::MatrixXd V_handle = V;
     Eigen::VectorXi b;  // Handle vertices
@@ -125,22 +124,22 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
             Eigen::Vector2f max_pos = down_mouse_pos.cwiseMax(up_mouse_pos);
 
             // Project 3D points to screen space and check if they are inside the rectangle
-            anchors_indices.clear();
+            constraints.clearAnchorIndices();
             for (int i = 0; i < V_handle.rows(); ++i)
             {
                 Eigen::Vector3f proj;
                 igl::project(V_handle.row(i).cast<float>(), viewer.core().view, viewer.core().proj, viewer.core().viewport, proj);
                 if ((proj.head<2>().array() >= min_pos.array()).all() && (proj.head<2>().array() <= max_pos.array()).all())
                 {
-                    anchors_indices.push_back(i);
+                    constraints.addAnchorIndex(i);
                 }
             }
 
             // Update anchor vertices
-            a.resize(anchors_indices.size());
-            for (int i = 0; i < anchors_indices.size(); ++i)
+            a.resize(constraints.getAnchorSize());
+            for (int i = 0; i < constraints.getAnchorSize(); ++i)
             {
-                a(i) = anchors_indices[i];
+                a(i) = constraints.getAnchorIndex(i);
             }
             ac = V_orig(a, Eigen::all);
 
@@ -165,10 +164,11 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
                 Eigen::MatrixXd::Index maxIndex;
                 bc.maxCoeff(&maxIndex);
                 int closest_vertex = viewer.data().F(fid, maxIndex);
-                handles_indices.push_back(closest_vertex);
+                constraints.addHandleIndex(closest_vertex);
             }
             return true;
         }
+
         return false;
     };
 
@@ -183,12 +183,12 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     viewer.callback_pre_draw = [&](decltype(viewer) &) -> bool
     {
         viewer.data().clear_points();
-        for (const auto &idx : anchors_indices)
+        for (const auto &idx : constraints.getAnchorIndices())
         {
             viewer.data().add_points(V_handle.row(idx), Eigen::RowVector3d(1, 0, 0));
         }
 
-        for (const auto &idx : handles_indices)
+        for (const auto &idx : constraints.getHandleIndices())
         {
             viewer.data().add_points(V_handle.row(idx), Eigen::RowVector3d(0, 1, 1));
         }
