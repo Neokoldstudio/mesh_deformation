@@ -26,8 +26,8 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
 
     plugin.widgets.push_back(&guizmo);
 
-    guizmo.T.block(0,3,3,1) = 0.5*(V.colwise().maxCoeff() + V.colwise().minCoeff()).transpose().cast<float>();
-  // Update can be applied relative to this remembered initial transform
+    guizmo.T.block(0, 3, 3, 1) = 0.5 * (V.colwise().maxCoeff() + V.colwise().minCoeff()).transpose().cast<float>();
+    // Update can be applied relative to this remembered initial transform
     const Eigen::Matrix4f T0 = guizmo.T;
     // Attach callback to apply imguizmo's transform to mesh
 
@@ -40,23 +40,34 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     Eigen::MatrixXd bc; // Handle target positions
     Eigen::MatrixXd ac; // Anchor positions
 
-    guizmo.callback = [&](const Eigen::Matrix4f & T)
+    guizmo.callback = [&](const Eigen::Matrix4f &T)
     {
-        const Eigen::Matrix4d TT = (T*T0.inverse()).cast<double>().transpose();
+        const Eigen::Matrix4d TT = (T * T0.inverse()).cast<double>().transpose();
         V_handle = (V_orig.rowwise().homogeneous() * TT).rowwise().hnormalized();
         viewer.data().set_vertices(V_handle);
         viewer.data().compute_normals();
     };
 
-      // Maya-style keyboard shortcuts for operation
-    viewer.callback_key_pressed = [&](decltype(viewer) &,unsigned int key, int mod)
+    // Maya-style keyboard shortcuts for operation
+    viewer.callback_key_pressed = [&](decltype(viewer) &, unsigned int key, int mod)
     {
-        switch(key)
+        switch (key)
         {
-        case ' ': guizmo.visible = !guizmo.visible; return true;
-        case 'W': case 'w': guizmo.operation = ImGuizmo::TRANSLATE; return true;
-        case 'E': case 'e': guizmo.operation = ImGuizmo::ROTATE;    return true;
-        case 'R': case 'r': guizmo.operation = ImGuizmo::SCALE;     return true;
+        case ' ':
+            guizmo.visible = !guizmo.visible;
+            return true;
+        case 'W':
+        case 'w':
+            guizmo.operation = ImGuizmo::TRANSLATE;
+            return true;
+        case 'E':
+        case 'e':
+            guizmo.operation = ImGuizmo::ROTATE;
+            return true;
+        case 'R':
+        case 'r':
+            guizmo.operation = ImGuizmo::SCALE;
+            return true;
         }
         return false;
     };
@@ -64,28 +75,33 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     igl::opengl::glfw::imgui::ImGuiMenu menu;
     plugin.widgets.push_back(&menu);
 
-    std::cout<<R"(
+    std::cout << R"(
     W,w  Switch to translate operation
     E,e  Switch to rotate operation
     R,r  Switch to scale operation
     )";
 
-
     static char filePath[128] = ""; // Buffer for file path input
 
     // Handle matrix to store selected vertex indices
 
-
     Eigen::Vector2f down_mouse_pos, up_mouse_pos;
     bool shift_pressed = false;
 
-    viewer.callback_key_down = [&](decltype(viewer) &, unsigned int key, int mod)->bool
+    viewer.callback_key_down = [&](decltype(viewer) &, unsigned int key, int mod) -> bool
     {
         if (key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT)
         {
             shift_pressed = true;
             double x, y;
             glfwGetCursorPos(viewer.window, &x, &y);
+
+            // Invert the y-coordinate
+            int window_height;
+            int window_width;
+            glfwGetWindowSize(viewer.window, &window_width, &window_height);
+            y = window_height - y;
+
             down_mouse_pos = Eigen::Vector2f(x, y);
             printf("%f %f\n", down_mouse_pos(0), down_mouse_pos(1));
             return true;
@@ -93,13 +109,21 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
         return false;
     };
 
-    viewer.callback_key_up = [&](decltype(viewer) &, unsigned int key, int mod)->bool
+    viewer.callback_key_up = [&](decltype(viewer) &, unsigned int key, int mod) -> bool
     {
         if (key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT)
         {
             shift_pressed = false;
             double x, y;
+
             glfwGetCursorPos(viewer.window, &x, &y);
+
+            // Invert the y-coordinate
+            int window_height;
+            int window_width;
+            glfwGetWindowSize(viewer.window, &window_width, &window_height);
+            y = window_height - y;
+
             up_mouse_pos = Eigen::Vector2f(x, y);
             printf("%f %f\n", up_mouse_pos(0), up_mouse_pos(1));
             // Define the rectangle
@@ -130,7 +154,7 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
         }
         return false;
     };
-    viewer.callback_pre_draw = [&](decltype(viewer) &)->bool
+    viewer.callback_pre_draw = [&](decltype(viewer) &) -> bool
     {
         viewer.data().clear_points();
         for (const auto &idx : handle_indices)
