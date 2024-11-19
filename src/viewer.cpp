@@ -10,6 +10,7 @@
 #include <igl/arap.h>
 #include <igl/lscm.h>
 #include <igl/boundary_loop.h>
+#include "include/biharmonic.h"
 
 using namespace Eigen;
 using namespace std;
@@ -32,7 +33,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     guizmo.visible = false;
     // Update can be applied relative to this remembered initial transform
     Eigen::Matrix4f T0 = guizmo.T;
-    // Attach callback to apply imguizmo's transform to mesh
 
     Constraints constraints;
     Eigen::MatrixXd V_orig = V;
@@ -46,6 +46,10 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     Eigen::MatrixXd handle_positions;
 
     viewer.data().point_size = 10;
+
+    // Biharmonic deformation object
+    BiharmonicDeformation biharmonic(V, F); // Create the deformation object
+
     // Maya-style keyboard shortcuts for operation
     viewer.callback_key_pressed = [&](decltype(viewer) &, unsigned int key, int mod)
     {
@@ -78,7 +82,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     )";
 
     // Handle matrix to store selected vertex indices
-
     Eigen::Vector2f down_mouse_pos, up_mouse_pos;
     bool shift_pressed = false;
 
@@ -190,6 +193,44 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
         }
         viewer.data().set_vertices(V_handle);
         viewer.data().compute_normals();
+
+        // After updating the handles, perform biharmonic deformation
+        if (constraints.getHandleSize() > 0)
+        {
+            // Set the handle positions
+            Eigen::MatrixXd handle_positions_updated(constraints.getHandleSize(), 3);
+            for (int i = 0; i < constraints.getHandleSize(); ++i)
+            {
+                int idx = constraints.getHandleIndex(i);
+                handle_positions_updated.row(i) = V_handle.row(idx);
+            }
+
+            // get anchor positions
+            Eigen::MatrixXd ac(constraints.getAnchorSize(), 3);
+            for (int i = 0; i < constraints.getAnchorSize(); ++i)
+            {
+                int idx = constraints.getAnchorIndex(i);
+                ac.row(i) = V_orig.row(idx);
+            }
+
+            // Convert std::vector<int> to Eigen::VectorXi
+            Eigen::VectorXi anchor_indices(constraints.getAnchorIndices().size());
+            for (size_t i = 0; i < constraints.getAnchorIndices().size(); ++i)
+            {
+                anchor_indices(i) = constraints.getAnchorIndices()[i];
+            }
+
+            Eigen::VectorXi handle_indices(constraints.getHandleIndices().size());
+            for (size_t i = 0; i < constraints.getHandleIndices().size(); ++i)
+            {
+                handle_indices(i) = constraints.getHandleIndices()[i];
+            }
+
+            biharmonic.setConstraints(anchor_indices, ac, handle_indices, handle_positions_updated);
+            Eigen::MatrixXd V_deformed = biharmonic.computeDeformation(); // Compute the deformation
+            viewer.data().set_vertices(V_deformed);                       // Update the viewer with the deformed vertices
+            viewer.data().compute_normals();                              // Recompute normals
+        }
     };
 
     viewer.callback_pre_draw = [&](decltype(viewer) &) -> bool
@@ -207,7 +248,7 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
         return false;
     };
 
-    menu.callback_draw_viewer_menu = [&constraints, &V_handle, &V_orig, &viewer]()
+    menu.callback_draw_viewer_menu = [&constraints, &V_handle, &V_orig, &viewer, &guizmo, &V, &handle_positions]()
     {
         // Add a text input field for loading constraints
         static char loadFilePath[256] = ""; // Separate buffer for load file path input
@@ -227,6 +268,22 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
                 {
                     V_handle.row(index) = (V_orig.row(index).homogeneous() * TT).hnormalized();
                 }
+
+                Eigen::MatrixXd V_constraints(constraints.getHandleSize(), V.cols());
+                for (int i = 0; i < constraints.getHandleSize(); ++i)
+                {
+                    V_constraints.row(i) = V.row(constraints.getHandleIndex(i));
+                }
+
+                // Store original positions of handle vertices
+                handle_positions.resize(constraints.getHandleSize(), V.cols());
+                for (int i = 0; i < constraints.getHandleSize(); ++i)
+                {
+                    handle_positions.row(i) = V.row(constraints.getHandleIndex(i));
+                }
+
+                guizmo.T.block(0, 3, 3, 1) = 0.5 * (V_constraints.colwise().maxCoeff() + V_constraints.colwise().minCoeff()).transpose().cast<float>();
+                guizmo.visible = true;
 
                 // Update the viewer data
                 viewer.data().set_vertices(V_handle);
