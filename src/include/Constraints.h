@@ -2,7 +2,7 @@
 #define CONSTRAINTS_H
 
 #include <vector>
-#include <Eigen>
+#include <Eigen/Dense>
 
 class Constraints
 {
@@ -41,20 +41,18 @@ public:
     // Clear all handle indices
     void clearHandleIndices();
 
-    // Set the transformation for all handles
-    void setHandleTransformation(const Eigen::Affine3d &transformation);
+    void importConstraints(const char *filePath);
 
-    // Get the transformation for all handles
-    Eigen::Affine3d getHandleTransformation() const;
+    void exportConstraints(const char *filePath);
 
-    void importConstraints(char *filePath);
+    void updateTransformation(const Eigen::Matrix4f &T);
 
-    void exportConstraints(char *filePath);
+    Eigen::Matrix4f getTransformation() const;
 
 private:
     std::vector<int> anchorIndices;
     std::vector<int> handleIndices;
-    Eigen::Affine3d handleTransformation;
+    Eigen::Matrix4f transformation = Eigen::Matrix4f::Identity(); // Store a single transformation matrix
 };
 
 #endif // CONSTRAINTS_H

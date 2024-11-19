@@ -28,8 +28,10 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     plugin.widgets.push_back(&guizmo);
 
     guizmo.T.block(0, 3, 3, 1) = 0.5 * (V.colwise().maxCoeff() + V.colwise().minCoeff()).transpose().cast<float>();
+    guizmo.operation = ImGuizmo::TRANSLATE;
+    guizmo.visible = false;
     // Update can be applied relative to this remembered initial transform
-    const Eigen::Matrix4f T0 = guizmo.T;
+    Eigen::Matrix4f T0 = guizmo.T;
     // Attach callback to apply imguizmo's transform to mesh
 
     Constraints constraints;
@@ -40,6 +42,10 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     Eigen::MatrixXd bc; // Handle target positions
     Eigen::MatrixXd ac; // Anchor positions
 
+    // Store original positions of handle vertices
+    Eigen::MatrixXd handle_positions;
+
+    viewer.data().point_size = 10;
     // Maya-style keyboard shortcuts for operation
     viewer.callback_key_pressed = [&](decltype(viewer) &, unsigned int key, int mod)
     {
@@ -56,10 +62,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
         case 'e':
             guizmo.operation = ImGuizmo::ROTATE;
             return true;
-        case 'R':
-        case 'r':
-            guizmo.operation = ImGuizmo::SCALE;
-            return true;
         }
         return false;
     };
@@ -68,13 +70,12 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     plugin.widgets.push_back(&menu);
 
     std::cout << R"(
+    SPACE Toggle guizmo
     W,w  Switch to translate operation
     E,e  Switch to rotate operation
-    R,r  Switch to scale operation
     SHIFT DOWN -> SHIFT UP Select anchored vertices by dragging a rectangle
+    ALT + LEFT CLICK Select handle vertices
     )";
-
-    static char filePath[128] = ""; // Buffer for file path input
 
     // Handle matrix to store selected vertex indices
 
@@ -96,7 +97,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
             y = window_height - y;
 
             down_mouse_pos = Eigen::Vector2f(x, y);
-            printf("%f %f\n", down_mouse_pos(0), down_mouse_pos(1));
             return true;
         }
         return false;
@@ -118,7 +118,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
             y = window_height - y;
 
             up_mouse_pos = Eigen::Vector2f(x, y);
-            printf("%f %f\n", up_mouse_pos(0), up_mouse_pos(1));
             // Define the rectangle
             Eigen::Vector2f min_pos = down_mouse_pos.cwiseMin(up_mouse_pos);
             Eigen::Vector2f max_pos = down_mouse_pos.cwiseMax(up_mouse_pos);
@@ -134,14 +133,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
                     constraints.addAnchorIndex(i);
                 }
             }
-
-            // Update anchor vertices
-            a.resize(constraints.getAnchorSize());
-            for (int i = 0; i < constraints.getAnchorSize(); ++i)
-            {
-                a(i) = constraints.getAnchorIndex(i);
-            }
-            ac = V_orig(a, Eigen::all);
 
             return true;
         }
@@ -166,6 +157,23 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
                 int closest_vertex = viewer.data().F(fid, maxIndex);
                 constraints.addHandleIndex(closest_vertex);
             }
+
+            Eigen::MatrixXd V_constraints(constraints.getHandleSize(), V.cols());
+            for (int i = 0; i < constraints.getHandleSize(); ++i)
+            {
+                V_constraints.row(i) = V.row(constraints.getHandleIndex(i));
+            }
+
+            // Store original positions of handle vertices
+            handle_positions.resize(constraints.getHandleSize(), V.cols());
+            for (int i = 0; i < constraints.getHandleSize(); ++i)
+            {
+                handle_positions.row(i) = V.row(constraints.getHandleIndex(i));
+            }
+
+            guizmo.T.block(0, 3, 3, 1) = 0.5 * (V_constraints.colwise().maxCoeff() + V_constraints.colwise().minCoeff()).transpose().cast<float>();
+            guizmo.visible = true;
+
             return true;
         }
 
@@ -175,7 +183,11 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     guizmo.callback = [&](const Eigen::Matrix4f &T)
     {
         const Eigen::Matrix4d TT = (T * T0.inverse()).cast<double>().transpose();
-        V_handle = (V_orig.rowwise().homogeneous() * TT).rowwise().hnormalized();
+        for (int i = 0; i < constraints.getHandleSize(); ++i)
+        {
+            int idx = constraints.getHandleIndex(i);
+            V_handle.row(idx) = (handle_positions.row(i).homogeneous() * TT).hnormalized();
+        }
         viewer.data().set_vertices(V_handle);
         viewer.data().compute_normals();
     };
@@ -194,6 +206,52 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
         }
         return false;
     };
+
+    menu.callback_draw_viewer_menu = [&constraints, &V_handle, &V_orig, &viewer]()
+    {
+        // Add a text input field for loading constraints
+        static char loadFilePath[256] = ""; // Separate buffer for load file path input
+        ImGui::InputText("Load Constraints JSON File Path", loadFilePath, IM_ARRAYSIZE(loadFilePath));
+
+        // Add a button for loading constraints
+        if (ImGui::Button("Load Constraints"))
+        {
+            // Load the constraints when the button is pressed
+            if (strlen(loadFilePath) > 0)
+            {
+                constraints.importConstraints(loadFilePath);
+
+                const Eigen::Matrix4d TT = constraints.getTransformation().transpose().cast<double>();
+
+                for (const auto &index : constraints.getHandleIndices())
+                {
+                    V_handle.row(index) = (V_orig.row(index).homogeneous() * TT).hnormalized();
+                }
+
+                // Update the viewer data
+                viewer.data().set_vertices(V_handle);
+                viewer.data().compute_normals();
+            }
+        }
+
+        // Add a space
+        ImGui::Spacing();
+
+        // Add a text input field for saving constraints
+        static char saveFilePath[256] = ""; // Separate buffer for save file path input
+        ImGui::InputText("Save Constraints JSON File Path", saveFilePath, IM_ARRAYSIZE(saveFilePath));
+
+        // Add a button for saving constraints
+        if (ImGui::Button("Save Constraints"))
+        {
+            // Save the constraints when the button is pressed
+            if (strlen(saveFilePath) > 0)
+            {
+                constraints.exportConstraints(saveFilePath);
+            }
+        }
+    };
+
     viewer.data().set_mesh(V, F);
     viewer.data().set_colors(C);
     viewer.data().show_lines = false;

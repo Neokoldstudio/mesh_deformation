@@ -1,5 +1,7 @@
 #include "include/Constraints.h"
+#include <nlohmann/json.hpp>
 #include <cstdio>
+#include <fstream>
 #include <string.h>
 #include <stdlib.h>
 #include <stdexcept>
@@ -62,66 +64,51 @@ void Constraints::clearHandleIndices()
     handleIndices.clear();
 }
 
-void Constraints::importConstraints(char *filePath)
+void Constraints::updateTransformation(const Eigen::Matrix4f &T)
 {
-    FILE *file = fopen(filePath, "r");
-    if (file == NULL)
+    transformation = T;
+}
+
+Eigen::Matrix4f Constraints::getTransformation() const
+{
+    return transformation;
+}
+
+void Constraints::importConstraints(const char *filePath)
+{
+    std::ifstream file(filePath);
+    if (!file.is_open())
     {
-        printf("Error opening file\n");
+        printf("Error opening file");
         return;
     }
 
-    char line[128];
-    while (fgets(line, sizeof(line), file))
-    {
-        char *token = strtok(line, " ");
-        if (strcmp(token, "a") == 0)
-        {
-            token = strtok(NULL, " ");
-            addAnchorIndex(atoi(token));
-        }
-        else if (strcmp(token, "h") == 0)
-        {
-            token = strtok(NULL, " ");
-            addHandleIndex(atoi(token));
-        }
-    }
+    nlohmann::json j;
+    file >> j;
 
-    fclose(file);
+    anchorIndices = j["anchors"].get<std::vector<int>>();
+    handleIndices = j["handles"].get<std::vector<int>>();
+    std::vector<float> transform = j["transformation"].get<std::vector<float>>();
+    transformation = Eigen::Map<Eigen::Matrix4f>(transform.data());
+
+    file.close();
 }
 
-void Constraints::exportConstraints(char *filePath)
+void Constraints::exportConstraints(const char *filePath)
 {
-    FILE *file = fopen(filePath, "w");
-    if (file == NULL)
+    std::ofstream file(filePath, std::ios::out | std::ios::trunc);
+    if (!file.is_open())
     {
-        file = fopen(filePath, "w+");
-        if (file == NULL)
-        {
-            printf("Error opening file\n");
-            return;
-        }
+        printf("Error opening file");
+        return;
     }
 
-    for (int i = 0; i < anchorIndices.size(); ++i)
-    {
-        fprintf(file, "a %d\n", anchorIndices[i]);
-    }
+    nlohmann::json j;
+    j["anchors"] = anchorIndices;
+    j["handles"] = handleIndices;
+    std::vector<float> transform(transformation.data(), transformation.data() + transformation.size());
+    j["transformation"] = transform;
 
-    for (int i = 0; i < handleIndices.size(); ++i)
-    {
-        fprintf(file, "h %d\n", handleIndices[i]);
-    }
-
-    fclose(file);
-}
-
-void Constraints::setHandleTransformation(const Eigen::Affine3d &transformation)
-{
-    handleTransformation = transformation;
-}
-
-Eigen::Affine3d Constraints::getHandleTransformation() const
-{
-    return handleTransformation;
+    file << j.dump(4);
+    file.close();
 }
