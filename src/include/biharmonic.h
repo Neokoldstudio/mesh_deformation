@@ -22,7 +22,7 @@ private:
     Eigen::MatrixXi F;
     Eigen::SparseMatrix<double> L, M; // Laplacian (L) and Mass (M) matrices
     Eigen::VectorXi anchor_indices, handle_indices;
-    Eigen::MatrixXd anchor_positions, handle_positions;
+    Eigen::MatrixXd anchor_displacement, handle_displacement;
 
     void computeLaplacian();
     void computeMassMatrix();

@@ -227,9 +227,9 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
             }
 
             biharmonic.setConstraints(anchor_indices, ac, handle_indices, handle_positions_updated);
-            Eigen::MatrixXd V_deformed = biharmonic.computeDeformation(); // Compute the deformation
-            viewer.data().set_vertices(V_deformed);                       // Update the viewer with the deformed vertices
-            viewer.data().compute_normals();                              // Recompute normals
+            Eigen::MatrixXd V_deformed = biharmonic.computeDeformation();
+            viewer.data().set_vertices(V_deformed);
+            viewer.data().compute_normals();
         }
     };
 
