@@ -1,11 +1,13 @@
 #include "include/biharmonic.h"
 #include <Eigen/IterativeLinearSolvers>
+#include <Eigen/SparseCholesky>
 #include <iostream>
 #include <igl/slice.h>
 #include <igl/slice_into.h>
 #include <igl/setdiff.h>
 #include <igl/cotmatrix.h>
 #include <igl/massmatrix.h>
+#include <vector>
 
 BiharmonicDeformation::BiharmonicDeformation(const Eigen::MatrixXd &V, const Eigen::MatrixXi &F)
     : V(V), F(F), V_deformed(V)

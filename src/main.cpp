@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
         MatrixXd V, U;
         MatrixXi F;
 
-        read_triangle_mesh("../assets/armadillo_1k.off", V, F);
+        read_triangle_mesh("../assets/Bunny.obj", V, F);
 
         view(V, F);
     }
