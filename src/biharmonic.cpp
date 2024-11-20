@@ -1,8 +1,10 @@
 #include "include/biharmonic.h"
 #include <Eigen/IterativeLinearSolvers>
+#include <Eigen/SparseCholesky>
 #include <iostream>
 #include <igl/cotmatrix.h>
 #include <igl/massmatrix.h>
+#include <vector>
 
 BiharmonicDeformation::BiharmonicDeformation(const Eigen::MatrixXd &V, const Eigen::MatrixXi &F)
     : V(V), F(F), V_deformed(V)
@@ -32,35 +34,35 @@ void BiharmonicDeformation::computeMassMatrix()
 
 Eigen::MatrixXd BiharmonicDeformation::computeDeformation()
 {
-    // Compute the right-hand side
-    Eigen::MatrixXd B = Eigen::MatrixXd::Zero(V.rows(), V.cols());
-    for (int i = 0; i < anchor_indices.size(); ++i)
+    Eigen::SparseMatrix<double> K = L.transpose() * M.cwiseInverse() * L;
+
+
+    for (int i = 0; i < anchor_indices.size(); i++)
     {
-        B.row(anchor_indices(i)) = anchor_positions.row(i);
-    }
-    for (int i = 0; i < handle_indices.size(); ++i)
-    {
-        B.row(handle_indices(i)) = handle_positions.row(i);
+        Aeq.insert(i, anchor_indices(i)) = 1;
+        Beq(i) = anchor_positions(i);
     }
 
-    // Construct the biharmonic operator
-    Eigen::SparseMatrix<double> M_inv = M.cwiseInverse();
-    Eigen::SparseMatrix<double> L2 = L.transpose() * M_inv * L;
+    for (int i = 0; i < handle_indices.size(); i++)
+    {
+        Aeq.insert(i + anchor_indices.size(), handle_indices(i)) = 1;
+        Beq(i + anchor_indices.size()) = handle_positions(i);
+    }
 
-    // Solve the linear system
+    // Solve the system of equations
+    Eigen::SparseMatrix<double> AeqT = Aeq.transpose();
+    Eigen::SparseMatrix<double> AeqT_Aeq = AeqT * Aeq;
+    Eigen::VectorXd AeqT_Beq = AeqT * Beq;
+
     Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
-    solver.compute(L2);
-    if (solver.info() != Eigen::Success)
-    {
-        std::cerr << "Decomposition failed" << std::endl;
-        return V_deformed;
-    }
-    V_deformed = solver.solve(B);
-    if (solver.info() != Eigen::Success)
-    {
-        std::cerr << "Solving failed" << std::endl;
-        return V_deformed;
-    }
+    solver.compute(AeqT_Aeq);
+    xeq = solver.solve(AeqT_Beq);
 
-    return V_deformed;
+    Eigen::VectorXd Beq_prime = Beq - Aeq * xeq;
+    Eigen::VectorXd B_prime = B - A * xeq;
+
+    solver.compute(A);
+    x = solver.solve(B_prime);
+
+    return V_deformed = x + xeq;
 }
