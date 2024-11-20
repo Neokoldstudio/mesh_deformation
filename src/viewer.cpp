@@ -194,6 +194,9 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
         viewer.data().set_vertices(V_handle);
         viewer.data().compute_normals();
 
+        // Update the transformation in the constraints object
+        constraints.updateTransformation(TT.cast<float>());
+
         // After updating the handles, perform biharmonic deformation
         if (constraints.getHandleSize() > 0)
         {
@@ -248,7 +251,7 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
         return false;
     };
 
-    menu.callback_draw_viewer_menu = [&constraints, &V_handle, &V_orig, &viewer, &guizmo, &V, &handle_positions]()
+    menu.callback_draw_viewer_menu = [&constraints, &V_handle, &V_orig, &viewer, &guizmo, &V, &handle_positions, &biharmonic]()
     {
         // Add a text input field for loading constraints
         static char loadFilePath[256] = ""; // Separate buffer for load file path input
@@ -262,7 +265,7 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
             {
                 constraints.importConstraints(loadFilePath);
 
-                const Eigen::Matrix4d TT = constraints.getTransformation().transpose().cast<double>();
+                const Eigen::Matrix4d TT = constraints.getTransformation().cast<double>();
 
                 for (const auto &index : constraints.getHandleIndices())
                 {
@@ -285,9 +288,43 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
                 guizmo.T.block(0, 3, 3, 1) = 0.5 * (V_constraints.colwise().maxCoeff() + V_constraints.colwise().minCoeff()).transpose().cast<float>();
                 guizmo.visible = true;
 
-                // Update the viewer data
-                viewer.data().set_vertices(V_handle);
-                viewer.data().compute_normals();
+                // Apply biharmonic deformation
+                if (constraints.getHandleSize() > 0)
+                {
+                    // Set the handle positions
+                    Eigen::MatrixXd handle_positions_updated(constraints.getHandleSize(), 3);
+                    for (int i = 0; i < constraints.getHandleSize(); ++i)
+                    {
+                        int idx = constraints.getHandleIndex(i);
+                        handle_positions_updated.row(i) = V_handle.row(idx);
+                    }
+
+                    // Get anchor positions
+                    Eigen::MatrixXd ac(constraints.getAnchorSize(), 3);
+                    for (int i = 0; i < constraints.getAnchorSize(); ++i)
+                    {
+                        int idx = constraints.getAnchorIndex(i);
+                        ac.row(i) = V_orig.row(idx);
+                    }
+
+                    // Convert std::vector<int> to Eigen::VectorXi
+                    Eigen::VectorXi anchor_indices(constraints.getAnchorIndices().size());
+                    for (size_t i = 0; i < constraints.getAnchorIndices().size(); ++i)
+                    {
+                        anchor_indices(i) = constraints.getAnchorIndices()[i];
+                    }
+
+                    Eigen::VectorXi handle_indices(constraints.getHandleIndices().size());
+                    for (size_t i = 0; i < constraints.getHandleIndices().size(); ++i)
+                    {
+                        handle_indices(i) = constraints.getHandleIndices()[i];
+                    }
+
+                    biharmonic.setConstraints(anchor_indices, ac, handle_indices, handle_positions_updated);
+                    Eigen::MatrixXd V_deformed = biharmonic.computeDeformation();
+                    viewer.data().set_vertices(V_deformed);
+                    viewer.data().compute_normals();
+                }
             }
         }
 
