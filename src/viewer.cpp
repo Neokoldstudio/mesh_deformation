@@ -66,6 +66,15 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
         case 'e':
             guizmo.operation = ImGuizmo::ROTATE;
             return true;
+        case 'C':
+        case 'c':
+            constraints.clearAnchorIndices();
+            constraints.clearHandleIndices();
+            V_handle = V_orig;
+            viewer.data().set_vertices(V_handle);
+            viewer.data().compute_normals();
+            guizmo.visible = false;
+            return true;
         }
         return false;
     };
@@ -77,6 +86,7 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     SPACE Toggle guizmo
     W,w  Switch to translate operation
     E,e  Switch to rotate operation
+    C,c  Clear constraints and reset mesh
     SHIFT DOWN -> SHIFT UP Select anchored vertices by dragging a rectangle
     ALT + LEFT CLICK Select handle vertices
     )";
