@@ -20,7 +20,7 @@ public:
 private:
     Eigen::MatrixXd V, V_deformed;
     Eigen::MatrixXi F;
-    Eigen::SparseMatrix<double> L, M; // Laplacian (L) and Mass (M) matrices
+    Eigen::SparseMatrix<double> L, M, K; // Laplacian (L), Mass (M) matrix and bi-Laplacian (K)
     Eigen::VectorXi anchor_indices, handle_indices;
     Eigen::MatrixXd anchor_displacement, handle_displacement;
 

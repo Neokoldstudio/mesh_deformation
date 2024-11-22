@@ -41,7 +41,7 @@ public:
     // Clear all handle indices
     void clearHandleIndices();
 
-    void importConstraints(const char *filePath);
+    bool importConstraints(const char *filePath);
 
     void exportConstraints(const char *filePath);
 

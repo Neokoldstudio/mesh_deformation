@@ -20,12 +20,14 @@ public:
 private:
     Eigen::MatrixXd V, V_deformed;
     Eigen::MatrixXi F;
-    Eigen::SparseMatrix<double> L, M; // Laplacian (L) and Mass (M) matrices
+    Eigen::SparseMatrix<double> L, M;              // Laplacian (L) and Mass (M) matrices
+    std::vector<std::vector<int>> neighborsMatrix; // neighbour vector to simplify rotation computation
     Eigen::VectorXi anchor_indices, handle_indices;
     Eigen::MatrixXd anchor_displacement, handle_displacement;
 
     void computeLaplacian();
     void computeMassMatrix();
+    void initialiseNeighbours(const Eigen::MatrixXd &V, const Eigen::MatrixXi &F);
 };
 
 #endif

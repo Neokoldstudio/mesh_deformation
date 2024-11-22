@@ -1,6 +1,7 @@
 #include "include/Constraints.h"
 #include <nlohmann/json.hpp>
 #include <cstdio>
+#include <iostream>
 #include <fstream>
 #include <string.h>
 #include <stdlib.h>
@@ -74,13 +75,13 @@ Eigen::Matrix4f Constraints::getTransformation() const
     return transformation;
 }
 
-void Constraints::importConstraints(const char *filePath)
+bool Constraints::importConstraints(const char *filePath)
 {
     std::ifstream file(filePath);
     if (!file.is_open())
     {
-        printf("Error opening file");
-        return;
+        std::cerr << "Error opening file" << std::endl;
+        return false;
     }
 
     nlohmann::json j;
@@ -92,14 +93,23 @@ void Constraints::importConstraints(const char *filePath)
     transformation = Eigen::Map<Eigen::Matrix4f>(transform.data());
 
     file.close();
+
+    return true;
 }
 
 void Constraints::exportConstraints(const char *filePath)
 {
+    std::string path(filePath);
+    if (path.substr(path.find_last_of(".") + 1) != "json")
+    {
+        std::cerr << "Error: File extension is not .json" << std::endl;
+        return;
+    }
+
     std::ofstream file(filePath, std::ios::out | std::ios::trunc);
     if (!file.is_open())
     {
-        printf("Error opening file");
+        std::cerr << "Error opening file" << std::endl;
         return;
     }
 
