@@ -23,7 +23,7 @@ private:
     Eigen::SparseMatrix<double> L, M;              // Laplacian (L) and Mass (M) matrices
     std::vector<std::vector<int>> neighborsMatrix; // neighbour vector to simplify rotation computation
     Eigen::VectorXi anchor_indices, handle_indices;
-    Eigen::MatrixXd anchor_displacement, handle_displacement;
+    Eigen::MatrixXd anchor_positions, handle_positions;
 
     void computeLaplacian();
     void computeMassMatrix();

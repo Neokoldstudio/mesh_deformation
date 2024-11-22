@@ -22,9 +22,9 @@ void ARAP::setConstraints(const Eigen::VectorXi &anchor_indices, const Eigen::Ma
                           const Eigen::VectorXi &handle_indices, const Eigen::MatrixXd &handle_positions)
 {
     this->anchor_indices = anchor_indices;
-    this->anchor_displacement = anchor_positions - V(anchor_indices, Eigen::all);
+    this->anchor_positions = anchor_positions;
     this->handle_indices = handle_indices;
-    this->handle_displacement = handle_positions - V(handle_indices, Eigen::all);
+    this->handle_positions = handle_positions;
 }
 
 void ARAP::computeLaplacian()
@@ -56,9 +56,9 @@ Eigen::MatrixXd ARAP::computeDeformation()
     Eigen::VectorXi constrained_indices(anchor_indices.size() + handle_indices.size());
     constrained_indices << anchor_indices, handle_indices;
 
-    // Combine anchor and handle displacements
-    Eigen::MatrixXd constrained_displacement(anchor_displacement.rows() + handle_displacement.rows(), anchor_displacement.cols());
-    constrained_displacement << anchor_displacement, handle_displacement;
+    // Combine anchor and handle positionss
+    Eigen::MatrixXd constrained_positions(anchor_positions.rows() + handle_positions.rows(), anchor_positions.cols());
+    constrained_positions << anchor_positions, handle_positions;
 
     // Initialize the linear solver
     Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
@@ -80,7 +80,7 @@ Eigen::MatrixXd ARAP::computeDeformation()
         }
 
         // Modify the B matrix to incorporate constraints
-        igl::slice_into(constrained_displacement, constrained_indices, 1, B);
+        igl::slice_into(-constrained_positions, constrained_indices, 1, B);
 
         // Create a modified Laplacian matrix
         Eigen::SparseMatrix<double> L_modified = L;
@@ -91,7 +91,7 @@ Eigen::MatrixXd ARAP::computeDeformation()
             {
                 it.valueRef() = 0.0;
             }
-            L_modified.coeffRef(idx, idx) = -1.0;
+            L_modified.coeffRef(idx, idx) = 1.0;
         }
 
         // Recompute the decomposition with the modified Laplacian matrix
