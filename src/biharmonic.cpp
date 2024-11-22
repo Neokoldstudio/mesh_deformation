@@ -14,7 +14,7 @@ BiharmonicDeformation::BiharmonicDeformation(const Eigen::MatrixXd &V, const Eig
 {
     computeLaplacian();
     computeMassMatrix();
-    K = L.transpose() * M.cwiseInverse() * L; // precompute the bilaplacian opperator, the direct inverse matrix might not be a good idea tho
+    K = L.transpose() * M.cwiseInverse() * L; // precompute the bilaplacian operator
 }
 
 void BiharmonicDeformation::setConstraints(const Eigen::VectorXi &anchor_indices, const Eigen::MatrixXd &anchor_positions,
@@ -28,38 +28,37 @@ void BiharmonicDeformation::setConstraints(const Eigen::VectorXi &anchor_indices
 
 void BiharmonicDeformation::computeLaplacian()
 {
-    igl::cotmatrix(V, F, L); // Compute the cotangent Laplacian matrix
+    igl::cotmatrix(V, F, L);
 }
 
 void BiharmonicDeformation::computeMassMatrix()
 {
-    igl::massmatrix(V, F, igl::MASSMATRIX_TYPE_VORONOI, M); // Compute the mass matrix
+    igl::massmatrix(V, F, igl::MASSMATRIX_TYPE_VORONOI, M);
 }
 
 Eigen::MatrixXd BiharmonicDeformation::computeDeformation()
 {
     // Combine anchor and handle indices and positions to form a constraint vector
-    Eigen::VectorXi d_user_indicies(anchor_indices.size() + handle_indices.size());
-    d_user_indicies << anchor_indices, handle_indices;
+    Eigen::VectorXi d_user_indices(anchor_indices.size() + handle_indices.size());
+    d_user_indices << anchor_indices, handle_indices;
 
     // Combine anchor and handle displacements to form the vector d_user
     Eigen::MatrixXd d_user(anchor_displacement.rows() + handle_displacement.rows(), anchor_displacement.cols());
-    d_user << anchor_displacement,
-        handle_displacement;
+    d_user << anchor_displacement, handle_displacement;
 
     // Compute the free indices
     Eigen::VectorXi all_indices = Eigen::VectorXi::LinSpaced(V.rows(), 0, V.rows() - 1);
     Eigen::VectorXi free_indices;
     Eigen::VectorXi _;
-    igl::setdiff(all_indices, d_user_indicies, free_indices, _);
+    igl::setdiff(all_indices, d_user_indices, free_indices, _);
 
     // Partition K into blocks (as seen in the calculation part, we do not need more than K_ff and K_fc)
     Eigen::SparseMatrix<double> K_ff, K_fc;
-    igl::slice(K, free_indices, free_indices, K_ff);    // Free-Free block
-    igl::slice(K, free_indices, d_user_indicies, K_fc); // Free-Constrained block
+    igl::slice(K, free_indices, free_indices, K_ff);
+    igl::slice(K, free_indices, d_user_indices, K_fc);
 
     // Solve for free displacements
-    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver; // TODO : check if this is the right solver
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
     solver.compute(K_ff);
     if (solver.info() != Eigen::Success)
     {
