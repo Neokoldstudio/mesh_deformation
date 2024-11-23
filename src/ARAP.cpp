@@ -48,7 +48,7 @@ void ARAP::computeMassMatrix()
 
 Eigen::MatrixXd ARAP::computeDeformation()
 {
-    const int max_iterations = 10;
+    const int max_iterations = 4;
     const double tolerance = 1e-5;
     Eigen::MatrixXd V_prev = V;
 
@@ -56,70 +56,88 @@ Eigen::MatrixXd ARAP::computeDeformation()
     Eigen::VectorXi constrained_indices(anchor_indices.size() + handle_indices.size());
     constrained_indices << anchor_indices, handle_indices;
 
-    // Combine anchor and handle positionss
+    // Combine anchor and handle positions
     Eigen::MatrixXd constrained_positions(anchor_positions.rows() + handle_positions.rows(), anchor_positions.cols());
     constrained_positions << anchor_positions, handle_positions;
 
-    // Initialize the linear solver
-    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
+    // Create the mask of unconstrained indices
+    std::vector<int> unconstrained_indices_vector;
+    for (int i = 0; i < V.rows(); ++i)
+    {
+        if (std::find(constrained_indices.data(), constrained_indices.data() + constrained_indices.size(), i) == constrained_indices.data() + constrained_indices.size())
+        {
+            unconstrained_indices_vector.push_back(i);
+        }
+    }
+    Eigen::VectorXi unconstrained_indices = Eigen::Map<Eigen::VectorXi>(unconstrained_indices_vector.data(), unconstrained_indices_vector.size());
 
-    for (int i = 0; i < max_iterations; i++)
+    // Initialize the linear solver for the reduced system
+    Eigen::SparseMatrix<double> L_reduced;
+    igl::slice(L, unconstrained_indices, unconstrained_indices, L_reduced);
+
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
+    solver.compute(L_reduced);
+    if (solver.info() != Eigen::Success)
+    {
+        std::cerr << "Decomposition failed!" << std::endl;
+        return V_deformed;
+    }
+
+    for (int iter = 0; iter < max_iterations; ++iter)
     {
         std::vector<Eigen::Matrix3d> R(V.rows(), Eigen::Matrix3d::Identity());
 
-        // Compute the B matrix
-        Eigen::MatrixXd B = Eigen::MatrixXd::Zero(V.rows(), 3);
-        for (int j = 0; j < V.rows(); j++)
+        // Compute the B matrix for the unconstrained vertices
+        Eigen::MatrixXd B = Eigen::MatrixXd::Zero(unconstrained_indices.size(), 3);
+        for (int i = 0; i < unconstrained_indices.size(); ++i)
         {
+            int j = unconstrained_indices[i];
             for (int k : neighborsMatrix[j])
             {
                 Eigen::Vector3d p = V_prev.row(j) - V_prev.row(k);
-                double wij = L.coeff(j, k); // Use the cotangent laplacian to compute the weight
-                B.row(j) += 0.5 * wij * ((R[j] + R[k]) * p).transpose();
+                double wij = L.coeff(j, k);
+                B.row(i) += 0.5 * wij * ((R[j] + R[k]) * p).transpose();
             }
         }
 
-        // Modify the B matrix to incorporate constraints
-        igl::slice_into(-constrained_positions, constrained_indices, 1, B);
-
-        // Create a modified Laplacian matrix
-        Eigen::SparseMatrix<double> L_modified = L;
-        for (int k = 0; k < constrained_indices.size(); k++)
+        // Adjust the right-hand side for the constraints
+        for (int i = 0; i < constrained_indices.size(); ++i)
         {
-            int idx = constrained_indices[k];
-            for (Eigen::SparseMatrix<double>::InnerIterator it(L_modified, idx); it; ++it)
+            int j = constrained_indices[i];
+            for (int k : neighborsMatrix[j])
             {
-                it.valueRef() = 0.0;
+                auto it = std::find(unconstrained_indices.data(), unconstrained_indices.data() + unconstrained_indices.size(), k);
+                if (it != unconstrained_indices.data() + unconstrained_indices.size())
+                {
+                    int idx = std::distance(unconstrained_indices.data(), it);
+                    double wij = L.coeff(j, k);
+                    B.row(idx) -= wij * constrained_positions.row(i);
+                }
             }
-            L_modified.coeffRef(idx, idx) = 1.0;
         }
 
-        // Recompute the decomposition with the modified Laplacian matrix
-        solver.compute(L_modified);
-        if (solver.info() != Eigen::Success)
-        {
-            std::cerr << "Decomposition failed!" << std::endl;
-            return V_deformed;
-        }
-
-        // Solve for the new vertex positions
-        Eigen::MatrixXd P_prime = solver.solve(B);
+        // Solve the reduced system
+        Eigen::MatrixXd P_prime_unconstrained = solver.solve(B);
         if (solver.info() != Eigen::Success)
         {
             std::cerr << "Solving failed!" << std::endl;
             return V_deformed;
         }
-        V_deformed = P_prime;
+
+        // Reconstruct the full solution
+        V_deformed = V_prev;
+        igl::slice_into(P_prime_unconstrained, unconstrained_indices, 1, V_deformed);
+        igl::slice_into(constrained_positions, constrained_indices, 1, V_deformed);
 
         // Update rotations
-        for (int j = 0; j < V.rows(); j++)
+        for (int j = 0; j < V.rows(); ++j)
         {
             Eigen::Matrix3d Cov = Eigen::Matrix3d::Zero();
             for (int k : neighborsMatrix[j])
             {
                 Eigen::Vector3d p = V_prev.row(j) - V_prev.row(k);
                 Eigen::Vector3d p_prime = V_deformed.row(j) - V_deformed.row(k);
-                double wij = L.coeff(j, k); // Use the cotangent laplacian to compute the weight
+                double wij = L.coeff(j, k);
                 Cov += wij * p * p_prime.transpose();
             }
 
