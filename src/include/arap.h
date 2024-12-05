@@ -29,8 +29,7 @@ private:
     Eigen::MatrixXd handle_positions;
     std::vector<std::vector<int>> neighborsMatrix;
 
-    double scL1Loss(const Eigen::VectorXd &x, double s);
-    Eigen::VectorXd scL1Shrinkage(const Eigen::VectorXd &x, double s, double wa, double rho);
+    Eigen::VectorXd SC_L1_Shrinkage(const Eigen::VectorXd &, double);
 };
 
 #endif

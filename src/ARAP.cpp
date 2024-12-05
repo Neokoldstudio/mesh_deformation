@@ -37,11 +37,29 @@ void ARAP::computeMassMatrix()
     igl::massmatrix(V, F, igl::MASSMATRIX_TYPE_VORONOI, M); // Compute the mass matrix
 }
 
+Eigen::VectorXd ARAP::SC_L1_Shrinkage(const Eigen::VectorXd &x, double lambda)
+{
+    // Ensure the input vector type is Eigen::VectorXd
+    Eigen::VectorXd y = x;
+    double norm_x = x.norm();
+    if (norm_x > lambda)
+    {
+        y = (1.0 - lambda / norm_x) * x;
+    }
+    else
+    {
+        y.setZero();
+    }
+    return y;
+}
+
 Eigen::MatrixXd ARAP::computeDeformation()
 {
     const int max_iterations = 4;
     const double tolerance = 1e-5;
     Eigen::MatrixXd V_prev = V;
+
+    const double s = 1.0; // regularisation parameter
 
     // Combine anchor and handle indices
     Eigen::VectorXi constrained_indices(anchor_indices.size() + handle_indices.size());
@@ -74,11 +92,14 @@ Eigen::MatrixXd ARAP::computeDeformation()
         return V_deformed;
     }
 
+    // Initialize variables for ADMM
+    Eigen::MatrixXd Z = Eigen::MatrixXd::Zero(V.rows(), 3); // For SC-L1 shrinkage
+    Eigen::MatrixXd X = Eigen::MatrixXd::Zero(V.rows(), 3); // For deformation gradient
+    Eigen::MatrixXd V_update = V;
+
     for (int iter = 0; iter < max_iterations; ++iter)
     {
-        std::vector<Eigen::Matrix3d> R(V.rows(), Eigen::Matrix3d::Identity());
-
-        // Update rotations
+        // Step 1: Update X (symmetric factor of deformation gradient)
         for (int j = 0; j < V.rows(); ++j)
         {
             Eigen::Matrix3d Cov = Eigen::Matrix3d::Zero();
@@ -93,16 +114,16 @@ Eigen::MatrixXd ARAP::computeDeformation()
             Eigen::JacobiSVD<Eigen::Matrix3d> svd(Cov, Eigen::ComputeFullU | Eigen::ComputeFullV);
             Eigen::Matrix3d U = svd.matrixU();
             Eigen::Matrix3d V = svd.matrixV();
-            R[j] = V * U.transpose();
-            if (R[j].determinant() < 0)
-            {
-                Eigen::Matrix3d S = Eigen::Matrix3d::Identity();
-                S.row(2) << 0, 0, -1; // flip the sign of the last row
-                R[j] = V * S * U.transpose();
-            }
+            X.row(j) = (V * U.transpose()).row(0); // Taking the first row (the symmetric factor)
         }
 
-        // Compute the B matrix for the unconstrained vertices
+        // Step 2: Update Z using SC-L1 shrinkage
+        for (int j = 0; j < V.rows(); ++j)
+        {
+            Z.row(j) = SC_L1_Shrinkage(V_deformed.row(j) - V_prev.row(j), 0.1); // Update with SC-L1 shrinkage
+        }
+
+        // Step 3: Update vertex positions (V) with the linear system
         Eigen::MatrixXd B = Eigen::MatrixXd::Zero(unconstrained_indices.size(), 3);
         for (int i = 0; i < unconstrained_indices.size(); ++i)
         {
@@ -111,23 +132,7 @@ Eigen::MatrixXd ARAP::computeDeformation()
             {
                 Eigen::Vector3d p = V_prev.row(j) - V_prev.row(k);
                 double wij = L.coeff(j, k);
-                B.row(i) += 0.5 * wij * ((R[j] + R[k]) * p);
-            }
-        }
-
-        // Adjust the right-hand side for the constraints
-        for (int i = 0; i < constrained_indices.size(); ++i)
-        {
-            int j = constrained_indices[i];
-            for (int k : neighborsMatrix[j])
-            {
-                auto it = std::find(unconstrained_indices.data(), unconstrained_indices.data() + unconstrained_indices.size(), k);
-                if (it != unconstrained_indices.data() + unconstrained_indices.size())
-                {
-                    int idx = std::distance(unconstrained_indices.data(), it);
-                    double wij = L.coeff(j, k);
-                    B.row(idx) -= wij * constrained_positions.row(i);
-                }
+                B.row(i) += 0.5 * wij * ((X.row(j) + X.row(k)) * p);
             }
         }
 
@@ -151,6 +156,7 @@ Eigen::MatrixXd ARAP::computeDeformation()
         }
         V_prev = V_deformed;
     }
+
     return V_deformed;
 }
 
