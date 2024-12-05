@@ -53,8 +53,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     BiharmonicDeformation biharmonic(V, F); // Create the deformation object
     ARAP ARAP(V, F);                        // Create the ARAP object
 
-    bool arap = false;
-
     // Maya-style keyboard shortcuts for operation
     viewer.callback_key_pressed = [&](decltype(viewer) &, unsigned int key, int mod)
     {
@@ -80,10 +78,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
             viewer.data().compute_normals();
             guizmo.visible = false;
             return true;
-        case 'M':
-        case 'm':
-            arap = !arap;
-            return true;
         }
         return false;
     };
@@ -96,7 +90,6 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
     W,w  Switch to translate operation
     E,e  Switch to rotate operation
     C,c  Clear constraints and reset mesh
-    M,m  Switch between ARAP and Biharmonic deformation (Biharmonic by default)
     SHIFT DOWN -> SHIFT UP Select anchored vertices by dragging a rectangle
     ALT + LEFT CLICK Select handle vertices
     )";
@@ -249,16 +242,8 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
                 handle_indices(i) = constraints.getHandleIndices()[i];
             }
 
-            if (arap)
-            {
-                ARAP.setConstraints(anchor_indices, ac, handle_indices, handle_positions_updated);
-                V_handle = ARAP.computeDeformation();
-            }
-            else
-            {
-                biharmonic.setConstraints(anchor_indices, ac, handle_indices, handle_positions_updated);
-                V_handle = biharmonic.computeDeformation();
-            }
+            ARAP.setConstraints(anchor_indices, ac, handle_indices, handle_positions_updated);
+            V_handle = ARAP.computeDeformation();
 
             viewer.data().set_vertices(V_handle);
             viewer.data().compute_normals();
@@ -275,15 +260,12 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
 
         for (const auto &idx : constraints.getHandleIndices())
         {
-            if (arap)
-                viewer.data().add_points(V_handle.row(idx), Eigen::RowVector3d(0, 1, 0));
-            else
-                viewer.data().add_points(V_handle.row(idx), Eigen::RowVector3d(0, 1, 1));
+            viewer.data().add_points(V_handle.row(idx), Eigen::RowVector3d(0, 1, 1));
         }
         return false;
     };
 
-    menu.callback_draw_viewer_menu = [&constraints, &V_handle, &V_orig, &viewer, &guizmo, &V, &handle_positions, &biharmonic, &ARAP, &arap]()
+    menu.callback_draw_viewer_menu = [&constraints, &V_handle, &V_orig, &viewer, &guizmo, &V, &handle_positions, &biharmonic, &ARAP]()
     {
         // Add a text input field for loading constraints
         static char loadFilePath[256] = ""; // Separate buffer for load file path input
@@ -354,16 +336,8 @@ void view(Eigen::MatrixXd V, Eigen::MatrixXi F)
                             handle_indices(i) = constraints.getHandleIndices()[i];
                         }
 
-                        if (arap)
-                        {
-                            ARAP.setConstraints(anchor_indices, ac, handle_indices, handle_positions_updated);
-                            V_handle = ARAP.computeDeformation();
-                        }
-                        else
-                        {
-                            biharmonic.setConstraints(anchor_indices, ac, handle_indices, handle_positions_updated);
-                            V_handle = biharmonic.computeDeformation();
-                        }
+                        ARAP.setConstraints(anchor_indices, ac, handle_indices, handle_positions_updated);
+                        V_handle = ARAP.computeDeformation();
 
                         viewer.data().set_vertices(V_handle);
                         viewer.data().compute_normals();

@@ -37,15 +37,6 @@ void ARAP::computeMassMatrix()
     igl::massmatrix(V, F, igl::MASSMATRIX_TYPE_VORONOI, M); // Compute the mass matrix
 }
 
-#include <Eigen/IterativeLinearSolvers>
-#include <Eigen/SparseCholesky>
-#include <igl/slice.h>
-#include <igl/slice_into.h>
-#include <igl/cotmatrix.h>
-#include <igl/massmatrix.h>
-#include <vector>
-#include <iostream>
-
 Eigen::MatrixXd ARAP::computeDeformation()
 {
     const int max_iterations = 4;
@@ -87,6 +78,30 @@ Eigen::MatrixXd ARAP::computeDeformation()
     {
         std::vector<Eigen::Matrix3d> R(V.rows(), Eigen::Matrix3d::Identity());
 
+        // Update rotations
+        for (int j = 0; j < V.rows(); ++j)
+        {
+            Eigen::Matrix3d Cov = Eigen::Matrix3d::Zero();
+            for (int k : neighborsMatrix[j])
+            {
+                Eigen::Vector3d p = V_prev.row(j) - V_prev.row(k);
+                Eigen::Vector3d p_prime = V_deformed.row(j) - V_deformed.row(k);
+                double wij = L.coeff(j, k);
+                Cov += wij * p * p_prime.transpose();
+            }
+
+            Eigen::JacobiSVD<Eigen::Matrix3d> svd(Cov, Eigen::ComputeFullU | Eigen::ComputeFullV);
+            Eigen::Matrix3d U = svd.matrixU();
+            Eigen::Matrix3d V = svd.matrixV();
+            R[j] = V * U.transpose();
+            if (R[j].determinant() < 0)
+            {
+                Eigen::Matrix3d S = Eigen::Matrix3d::Identity();
+                S.row(2) << 0, 0, -1; // flip the sign of the last row
+                R[j] = V * S * U.transpose();
+            }
+        }
+
         // Compute the B matrix for the unconstrained vertices
         Eigen::MatrixXd B = Eigen::MatrixXd::Zero(unconstrained_indices.size(), 3);
         for (int i = 0; i < unconstrained_indices.size(); ++i)
@@ -96,7 +111,7 @@ Eigen::MatrixXd ARAP::computeDeformation()
             {
                 Eigen::Vector3d p = V_prev.row(j) - V_prev.row(k);
                 double wij = L.coeff(j, k);
-                B.row(i) += 0.5 * wij * ((R[j] + R[k]) * p).transpose();
+                B.row(i) += 0.5 * wij * ((R[j] + R[k]) * p);
             }
         }
 
@@ -128,30 +143,6 @@ Eigen::MatrixXd ARAP::computeDeformation()
         V_deformed = V_prev;
         igl::slice_into(P_prime_unconstrained, unconstrained_indices, 1, V_deformed);
         igl::slice_into(constrained_positions, constrained_indices, 1, V_deformed);
-
-        // Update rotations
-        for (int j = 0; j < V.rows(); ++j)
-        {
-            Eigen::Matrix3d Cov = Eigen::Matrix3d::Zero();
-            for (int k : neighborsMatrix[j])
-            {
-                Eigen::Vector3d p = V_prev.row(j) - V_prev.row(k);
-                Eigen::Vector3d p_prime = V_deformed.row(j) - V_deformed.row(k);
-                double wij = L.coeff(j, k);
-                Cov += wij * p * p_prime.transpose();
-            }
-
-            Eigen::JacobiSVD<Eigen::Matrix3d> svd(Cov, Eigen::ComputeFullU | Eigen::ComputeFullV);
-            Eigen::Matrix3d U = svd.matrixU();
-            Eigen::Matrix3d V = svd.matrixV();
-            Eigen::Matrix3d signCorrection = Eigen::Matrix3d::Identity();
-
-            double det = (V * U.transpose()).determinant();
-            if (det < 0)
-                signCorrection(2, 2) = -1;
-
-            R[j] = U * signCorrection * V.transpose();
-        }
 
         // Check for convergence
         if ((V_deformed - V_prev).norm() < tolerance)
